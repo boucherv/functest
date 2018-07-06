@@ -1,0 +1,26 @@
+---
+tenant_images:
+    ubuntu_14.04:
+        /home/opnfv/functest/images/ubuntu-14.04-server-cloudimg-amd64-disk1.img
+orchestrator:
+    name: heat
+    version: '4.0'
+vnf:
+    name: clearwater
+    version: '129'
+    descriptor:
+        file_name: /src/heat_vims/clearwater.yaml
+        name: clearwater-opnfv
+        version: '129'
+        envfile: heat_ims_envfile.yaml
+    requirements:
+        flavor:
+            name: clearwater.small
+            ram_min: 2048
+        compute_quotas:
+            cores: 50
+            instances: 15
+        network_quotas:
+            security_group: 20
+            security_group_rule: 100
+            port: 50
