@@ -37,7 +37,7 @@ __author__ = "Valentin Boucher <valentin.boucher@kontron.com>"
 
 
 class HeatIms(clearwater_ims_base.ClearwaterOnBoardingBase):
-    """Clearwater vIMS deployed with Cloudify Orchestrator Case."""
+    """Clearwater vIMS deployed with Heat Orchestrator Case."""
 
     __logger = logging.getLogger(__name__)
 
@@ -55,16 +55,7 @@ class HeatIms(clearwater_ims_base.ClearwaterOnBoardingBase):
             raise Exception("VNF config file not found")
 
         config_file = os.path.join(self.case_dir, self.config)
-        self.orchestrator = dict(
-            requirements=get_config("orchestrator.requirements", config_file),
-        )
-        self.details['orchestrator'] = dict(
-            name=get_config("orchestrator.name", config_file),
-            version=get_config("orchestrator.version", config_file),
-            status='ERROR',
-            result=''
-        )
-        self.__logger.debug("Orchestrator configuration %s", self.orchestrator)
+
         self.vnf = dict(
             descriptor=get_config("vnf.descriptor", config_file),
             inputs=get_config("vnf.inputs", config_file),
