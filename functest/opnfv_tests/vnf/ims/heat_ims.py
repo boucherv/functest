@@ -15,6 +15,8 @@ import logging
 import os
 import time
 import uuid
+import os_client_config
+import shade
 
 import six
 from snaps.config.flavor import FlavorConfig
@@ -29,6 +31,7 @@ from xtesting.energy import energy
 import yaml
 
 from functest.opnfv_tests.openstack.snaps import snaps_utils
+from functest.core import tenantnetwork
 from functest.opnfv_tests.vnf.ims import clearwater_ims_base
 from functest.utils import config
 from functest.utils import env
@@ -58,7 +61,6 @@ class HeatIms(clearwater_ims_base.ClearwaterOnBoardingBase):
 
         self.vnf = dict(
             descriptor=get_config("vnf.descriptor", config_file),
-            inputs=get_config("vnf.inputs", config_file),
             requirements=get_config("vnf.requirements", config_file)
         )
         self.details['vnf'] = dict(
@@ -68,16 +70,19 @@ class HeatIms(clearwater_ims_base.ClearwaterOnBoardingBase):
         )
         self.__logger.debug("VNF configuration: %s", self.vnf)
 
-        self.details['test_vnf'] = dict(
-            name=get_config("vnf_test_suite.name", config_file),
-            version=get_config("vnf_test_suite.version", config_file)
-        )
         self.images = get_config("tenant_images", config_file)
         self.__logger.info("Images needed for vIMS: %s", self.images)
 
     def prepare(self):
         """Prepare testscase (Additional pre-configuration steps)."""
         super(HeatIms, self).prepare()
+
+
+        self.cloud = shade.OpenStackCloud(cloud_config=os_client_config.get_config())
+        self.project = tenantnetwork.NewProject(
+            self.cloud, self.case_name, self.guid)
+        self.project.create()
+        self.cloud = self.project.cloud
 
         self.__logger.info("Additional pre-configuration steps")
 
