@@ -3,10 +3,21 @@ tiers:
     -
         name: vnf
         order: 4
-        ci_loop: '(daily)|(weekly)'
         description: >-
             Collection of VNF test cases.
         testcases:
+            -
+                case_name: cloudify
+                project_name: functest
+                criteria: 100
+                blocking: false
+                description: >-
+                    This test case deploys the Cloudify orchestrator.
+                dependencies:
+                    - DEPLOY_SCENARIO: 'os-.*-nofeature-.*ha'
+                run:
+                    module: 'functest.core.cloudify'
+                    class: 'Cloudify'
             -
                 case_name: cloudify_ims
                 project_name: functest
@@ -17,8 +28,7 @@ tiers:
                     Clearwater using the Cloudify orchestrator. It also runs
                     some signaling traffic.
                 dependencies:
-                    installer: ''
-                    scenario: 'os-.*-nofeature-.*ha'
+                    - DEPLOY_SCENARIO: 'os-.*-nofeature-.*ha'
                 run:
                     module: 'functest.opnfv_tests.vnf.ims.cloudify_ims'
                     class: 'CloudifyIms'
@@ -47,8 +57,7 @@ tiers:
                 description: >-
                     This test case is vRouter testing.
                 dependencies:
-                    installer: ''
-                    scenario: 'os-.*-nofeature-.*ha'
+                    - DEPLOY_SCENARIO: 'os-.*-nofeature-.*ha'
                 run:
                     module: 'functest.opnfv_tests.vnf.router.cloudify_vrouter'
                     class: 'CloudifyVrouter'
@@ -62,8 +71,7 @@ tiers:
                     vEPC validation with Juju as VNF manager and ABoT as test
                     executor.
                 dependencies:
-                    installer: ''
-                    scenario: 'os-.*-nofeature-.*ha'
+                    - DEPLOY_SCENARIO: 'os-.*-nofeature-.*ha'
                 run:
                     module: 'functest.opnfv_tests.vnf.epc.juju_epc'
                     class: 'JujuEpc'

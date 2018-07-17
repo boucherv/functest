@@ -36,6 +36,7 @@ class Shaker(singlevm.SingleVm2):
     flavor_disk = 3
     username = 'ubuntu'
     port = 9000
+    ssh_connect_loops = 12
 
     def prepare(self):
         super(Shaker, self).prepare()
@@ -50,11 +51,7 @@ class Shaker(singlevm.SingleVm2):
             - 1 on operation error
         """
         assert self.ssh
-        keystone_id = self.orig_cloud.search_services('keystone')[0].id
-        self.__logger.debug("keystone id: %s", keystone_id)
-        endpoint = self.orig_cloud.search_endpoints(
-            filters={'interface': os.environ.get('OS_INTERFACE', 'public'),
-                     'service_id': keystone_id})[0].url
+        endpoint = self.get_public_auth_url(self.orig_cloud)
         self.__logger.debug("keystone endpoint: %s", endpoint)
         self.orig_cloud.grant_role(
             "admin", user=self.project.user.id,
@@ -66,6 +63,8 @@ class Shaker(singlevm.SingleVm2):
             domain=self.project.domain.id)
         scpc = scp.SCPClient(self.ssh.get_transport())
         scpc.put('/home/opnfv/functest/conf/env_file', remote_path='~/')
+        if os.environ.get('OS_CACERT'):
+            scpc.put(os.environ.get('OS_CACERT'), remote_path='~/os_cacert')
         (_, stdout, stderr) = self.ssh.exec_command(
             'source ~/env_file && '
             'export OS_INTERFACE=public && '
@@ -73,6 +72,7 @@ class Shaker(singlevm.SingleVm2):
             'export OS_USERNAME={} && '
             'export OS_PROJECT_NAME={} && '
             'export OS_PASSWORD={} && '
+            '{}'
             'env && '
             'shaker --image-name {} --flavor-name {} '
             '--server-endpoint {}:9000 --scenario '
@@ -82,7 +82,10 @@ class Shaker(singlevm.SingleVm2):
             'openstack/perf_l3_north_south '
             '--report report.html --output report.json'.format(
                 endpoint, self.project.user.name, self.project.project.name,
-                self.project.password, self.image.name, self.flavor.name,
+                self.project.password,
+                'export OS_CACERT=~/os_cacert && ' if os.environ.get(
+                    'OS_CACERT') else '',
+                self.image.name, self.flavor.name,
                 self.fip.floating_ip_address))
         self.__logger.info("output:\n%s", stdout.read())
         self.__logger.info("error:\n%s", stderr.read())

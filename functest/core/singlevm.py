@@ -37,6 +37,9 @@ class VmReady1(tenantnetwork.TenantNetwork1):
 
     __logger = logging.getLogger(__name__)
     filename = '/home/opnfv/functest/images/cirros-0.4.0-x86_64-disk.img'
+    image_format = 'qcow2'
+    filename_alt = None
+    image_alt_format = image_format
     visibility = 'private'
     extra_properties = None
     flavor_ram = 512
@@ -45,8 +48,6 @@ class VmReady1(tenantnetwork.TenantNetwork1):
     flavor_alt_ram = 1024
     flavor_alt_vcpus = 1
     flavor_alt_disk = 1
-
-    image_format = 'qcow2'
 
     def __init__(self, **kwargs):
         if "case_name" not in kwargs:
@@ -77,6 +78,35 @@ class VmReady1(tenantnetwork.TenantNetwork1):
                 self.extra_properties),
             disk_format=getattr(
                 config.CONF, '{}_image_format'.format(self.case_name),
+                self.image_format),
+            visibility=getattr(
+                config.CONF, '{}_visibility'.format(self.case_name),
+                self.visibility))
+        self.__logger.debug("image: %s", image)
+        return image
+
+    def publish_image_alt(self, name=None):
+        """Publish alternative image
+
+        It allows publishing multiple images for the child testcases. It forces
+        the same configuration for all subtestcases.
+
+        Returns: image
+
+        Raises: expection on error
+        """
+        assert self.cloud
+        image = self.cloud.create_image(
+            name if name else '{}-img_alt_{}'.format(
+                self.case_name, self.guid),
+            filename=getattr(
+                config.CONF, '{}_image_alt'.format(self.case_name),
+                self.filename_alt),
+            meta=getattr(
+                config.CONF, '{}_extra_properties'.format(self.case_name),
+                self.extra_properties),
+            disk_format=getattr(
+                config.CONF, '{}_image_alt_format'.format(self.case_name),
                 self.image_format),
             visibility=getattr(
                 config.CONF, '{}_visibility'.format(self.case_name),
@@ -168,13 +198,15 @@ class VmReady1(tenantnetwork.TenantNetwork1):
         status = testcase.TestCase.EX_RUN_ERROR
         try:
             assert self.cloud
-            super(VmReady1, self).run(**kwargs)
+            assert super(VmReady1, self).run(
+                **kwargs) == testcase.TestCase.EX_OK
             self.image = self.publish_image()
             self.flavor = self.create_flavor()
             self.result = 100
             status = testcase.TestCase.EX_OK
         except Exception:  # pylint: disable=broad-except
             self.__logger.exception('Cannot run %s', self.case_name)
+            self.result = 0
         finally:
             self.stop_time = time.time()
         return status
@@ -184,8 +216,10 @@ class VmReady1(tenantnetwork.TenantNetwork1):
             assert self.orig_cloud
             assert self.cloud
             super(VmReady1, self).clean()
-            self.cloud.delete_image(self.image.id)
-            self.orig_cloud.delete_flavor(self.flavor.id)
+            if self.image:
+                self.cloud.delete_image(self.image.id)
+            if self.flavor:
+                self.orig_cloud.delete_flavor(self.flavor.id)
         except Exception:  # pylint: disable=broad-except
             self.__logger.exception("Cannot clean all ressources")
 
@@ -240,6 +274,7 @@ class SingleVm1(VmReady1):
     __logger = logging.getLogger(__name__)
     username = 'cirros'
     ssh_connect_timeout = 60
+    ssh_connect_loops = 6
 
     def __init__(self, **kwargs):
         if "case_name" not in kwargs:
@@ -294,7 +329,7 @@ class SingleVm1(VmReady1):
         self.__logger.debug("vm console: \n%s", p_console)
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.client.AutoAddPolicy())
-        for loop in range(6):
+        for loop in range(self.ssh_connect_loops):
             try:
                 ssh.connect(
                     fip.floating_ip_address,
@@ -345,7 +380,8 @@ class SingleVm1(VmReady1):
         status = testcase.TestCase.EX_RUN_ERROR
         try:
             assert self.cloud
-            super(SingleVm1, self).run(**kwargs)
+            assert super(SingleVm1, self).run(
+                **kwargs) == testcase.TestCase.EX_OK
             self.result = 0
             self.prepare()
             self.sshvm = self.boot_vm(
@@ -364,10 +400,14 @@ class SingleVm1(VmReady1):
         try:
             assert self.orig_cloud
             assert self.cloud
-            self.cloud.delete_floating_ip(self.fip.id)
-            self.cloud.delete_server(self.sshvm, wait=True)
-            self.cloud.delete_security_group(self.sec.id)
-            self.cloud.delete_keypair(self.keypair.id)
+            if self.fip:
+                self.cloud.delete_floating_ip(self.fip.id)
+            if self.sshvm:
+                self.cloud.delete_server(self.sshvm, wait=True)
+            if self.sec:
+                self.cloud.delete_security_group(self.sec.id)
+            if self.keypair:
+                self.cloud.delete_keypair(self.keypair.name)
             super(SingleVm1, self).clean()
         except Exception:  # pylint: disable=broad-except
             self.__logger.exception("Cannot clean all ressources")

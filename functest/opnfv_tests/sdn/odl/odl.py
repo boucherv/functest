@@ -159,14 +159,16 @@ class ODLTests(robotframework.RobotFramework):
             cloud = os_client_config.make_shade()
             neutron_id = cloud.search_services('neutron')[0].id
             endpoint = cloud.search_endpoints(
-                filters={'interface': os.environ.get('OS_INTERFACE', 'public'),
-                         'service_id': neutron_id})[0].url
+                filters={
+                    'interface': os.environ.get(
+                        'OS_INTERFACE', 'public').replace('URL', ''),
+                    'service_id': neutron_id})[0].url
             kwargs = {'neutronurl': endpoint}
             kwargs['odlip'] = env.get('SDN_CONTROLLER_IP')
-            kwargs['odlwebport'] = '8080'
-            kwargs['odlrestconfport'] = '8181'
-            kwargs['odlusername'] = 'admin'
-            kwargs['odlpassword'] = 'admin'
+            kwargs['odlwebport'] = env.get('SDN_CONTROLLER_WEBPORT')
+            kwargs['odlrestconfport'] = env.get('SDN_CONTROLLER_RESTCONFPORT')
+            kwargs['odlusername'] = env.get('SDN_CONTROLLER_USER')
+            kwargs['odlpassword'] = env.get('SDN_CONTROLLER_PASSWORD')
             installer_type = env.get('INSTALLER_TYPE')
             kwargs['osusername'] = os.environ['OS_USERNAME']
             kwargs['osuserdomainname'] = os.environ.get(

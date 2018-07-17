@@ -479,7 +479,8 @@ class RallyBase(singlevm.VmReady1):
     def clean(self):
         """Cleanup of OpenStack resources. Should be called on completion."""
         super(RallyBase, self).clean()
-        self.orig_cloud.delete_flavor(self.flavor_alt.id)
+        if self.flavor_alt:
+            self.orig_cloud.delete_flavor(self.flavor_alt.id)
 
     def is_successful(self):
         """The overall result of the test."""
@@ -494,7 +495,8 @@ class RallyBase(singlevm.VmReady1):
         """Run testcase."""
         self.start_time = time.time()
         try:
-            super(RallyBase, self).run(**kwargs)
+            assert super(RallyBase, self).run(
+                **kwargs) == testcase.TestCase.EX_OK
             conf_utils.create_rally_deployment()
             self._prepare_env()
             self._run_tests()
@@ -502,6 +504,7 @@ class RallyBase(singlevm.VmReady1):
             res = testcase.TestCase.EX_OK
         except Exception as exc:   # pylint: disable=broad-except
             LOGGER.error('Error with run: %s', exc)
+            self.result = 0
             res = testcase.TestCase.EX_RUN_ERROR
         self.stop_time = time.time()
         return res
