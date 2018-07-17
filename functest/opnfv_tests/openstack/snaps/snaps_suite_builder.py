@@ -24,7 +24,7 @@ from snaps.openstack.tests.create_image_tests import (
     CreateImageSuccessTests, CreateImageNegativeTests,
     CreateMultiPartImageTests)
 from snaps.openstack.tests.create_instance_tests import (
-    CreateInstanceSingleNetworkTests, CreateInstanceOnComputeHost,
+    CreateInstanceOnComputeHost,
     CreateInstanceSimpleTests, InstanceSecurityGroupTests,
     CreateInstancePortManipulationTests, SimpleHealthCheck,
     CreateInstanceFromThreePartImage, CreateInstanceTwoNetTests,
@@ -37,13 +37,14 @@ from snaps.openstack.tests.create_project_tests import (
     CreateProjectSuccessTests, CreateProjectUserTests)
 from snaps.openstack.tests.create_qos_tests import (
     CreateQoSTests)
-from snaps.openstack.tests.create_router_tests import (
-    CreateRouterSuccessTests, CreateRouterNegativeTests)
+# from snaps.openstack.tests.create_router_tests import
+# CreateRouterSuccessTests
+from snaps.openstack.tests.create_router_tests import CreateRouterNegativeTests
 from snaps.openstack.tests.create_security_group_tests import (
     CreateSecurityGroupTests)
 from snaps.openstack.tests.create_stack_tests import (
     CreateStackSuccessTests, CreateStackNegativeTests,
-    CreateStackFlavorTests, CreateStackFloatingIpTests,
+    CreateStackFlavorTests,
     CreateStackKeypairTests, CreateStackVolumeTests,
     CreateStackSecurityGroupTests)
 from snaps.openstack.tests.create_user_tests import (
@@ -65,7 +66,7 @@ from snaps.openstack.utils.tests.glance_utils_tests import (
     GlanceSmokeTests, GlanceUtilsTests)
 from snaps.openstack.utils.tests.heat_utils_tests import (
     HeatSmokeTests, HeatUtilsCreateSimpleStackTests,
-    HeatUtilsCreateComplexStackTests, HeatUtilsFlavorTests,
+    HeatUtilsFlavorTests,
     HeatUtilsKeypairTests, HeatUtilsSecurityGroupTests)
 from snaps.openstack.utils.tests.keystone_utils_tests import (
     KeystoneSmokeTests, KeystoneUtilsTests)
@@ -200,10 +201,11 @@ def add_openstack_api_tests(suite, os_creds, ext_net_name, use_keystone=True,
         HeatUtilsCreateSimpleStackTests, os_creds=os_creds,
         ext_net_name=ext_net_name, log_level=log_level,
         image_metadata=image_metadata))
-    suite.addTest(OSComponentTestCase.parameterize(
-        HeatUtilsCreateComplexStackTests, os_creds=os_creds,
-        ext_net_name=ext_net_name, log_level=log_level,
-        image_metadata=image_metadata))
+    # https://gerrit.opnfv.org/gerrit/#/c/59801/
+    # suite.addTest(OSComponentTestCase.parameterize(
+    #     HeatUtilsCreateComplexStackTests, os_creds=os_creds,
+    #     ext_net_name=ext_net_name, log_level=log_level,
+    #     image_metadata=image_metadata))
     suite.addTest(OSComponentTestCase.parameterize(
         HeatUtilsFlavorTests, os_creds=os_creds,
         ext_net_name=ext_net_name, log_level=log_level,
@@ -310,11 +312,13 @@ def add_openstack_integration_tests(suite, os_creds, ext_net_name,
         ext_net_name=ext_net_name, use_keystone=use_keystone,
         flavor_metadata=flavor_metadata, image_metadata=image_metadata,
         log_level=log_level))
-    suite.addTest(OSIntegrationTestCase.parameterize(
-        CreateRouterSuccessTests, os_creds=os_creds, ext_net_name=ext_net_name,
-        use_keystone=use_keystone,
-        flavor_metadata=flavor_metadata, image_metadata=image_metadata,
-        log_level=log_level))
+    # https://jira.opnfv.org/browse/SNAPS-320
+    # suite.addTest(OSIntegrationTestCase.parameterize(
+    #     CreateRouterSuccessTests, os_creds=os_creds,
+    #     ext_net_name=ext_net_name,
+    #     use_keystone=use_keystone,
+    #     flavor_metadata=flavor_metadata, image_metadata=image_metadata,
+    #     log_level=log_level))
     suite.addTest(OSIntegrationTestCase.parameterize(
         CreateRouterNegativeTests, os_creds=os_creds,
         ext_net_name=ext_net_name, use_keystone=use_keystone,
@@ -429,16 +433,18 @@ def add_openstack_integration_tests(suite, os_creds, ext_net_name,
         log_level=log_level))
 
     if use_floating_ips:
-        suite.addTest(OSIntegrationTestCase.parameterize(
-            CreateInstanceSingleNetworkTests, os_creds=os_creds,
-            ext_net_name=ext_net_name, use_keystone=use_keystone,
-            flavor_metadata=flavor_metadata, image_metadata=image_metadata,
-            log_level=log_level))
-        suite.addTest(OSIntegrationTestCase.parameterize(
-            CreateStackFloatingIpTests, os_creds=os_creds,
-            ext_net_name=ext_net_name, use_keystone=use_keystone,
-            flavor_metadata=flavor_metadata, image_metadata=image_metadata,
-            log_level=log_level))
+        # https://jira.opnfv.org/browse/SNAPS-322
+        # suite.addTest(OSIntegrationTestCase.parameterize(
+        #     CreateInstanceSingleNetworkTests, os_creds=os_creds,
+        #     ext_net_name=ext_net_name, use_keystone=use_keystone,
+        #     flavor_metadata=flavor_metadata, image_metadata=image_metadata,
+        #     log_level=log_level))
+        # https://gerrit.opnfv.org/gerrit/#/c/59801/
+        # suite.addTest(OSIntegrationTestCase.parameterize(
+        #     CreateStackFloatingIpTests, os_creds=os_creds,
+        #     ext_net_name=ext_net_name, use_keystone=use_keystone,
+        #     flavor_metadata=flavor_metadata, image_metadata=image_metadata,
+        #     log_level=log_level))
         suite.addTest(OSIntegrationTestCase.parameterize(
             AnsibleProvisioningTests, os_creds=os_creds,
             ext_net_name=ext_net_name, use_keystone=use_keystone,

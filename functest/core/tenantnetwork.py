@@ -47,6 +47,7 @@ class NewProject(object):
         self.password = None
         self.domain = None
         self.role = None
+        self.role_name = None
 
     def create(self):
         """Create projects/users"""
@@ -68,17 +69,25 @@ class NewProject(object):
             domain_id=self.domain.id)
         self.__logger.debug("user: %s", self.user)
         try:
-            assert self.orig_cloud.get_role(self.default_member)
+            if self.orig_cloud.get_role(self.default_member):
+                self.role_name = self.default_member
+            elif self.orig_cloud.get_role(self.default_member.lower()):
+                self.role_name = self.default_member.lower()
+            else:
+                raise Exception("Cannot detect {}".format(self.default_member))
         except Exception:  # pylint: disable=broad-except
             self.__logger.info("Creating default role %s", self.default_member)
             self.role = self.orig_cloud.create_role(self.default_member)
+            self.role_name = self.role.name
             self.__logger.debug("role: %s", self.role)
         self.orig_cloud.grant_role(
-            self.default_member, user=self.user.id, project=self.project.id,
+            self.role_name, user=self.user.id, project=self.project.id,
             domain=self.domain.id)
         osconfig = os_client_config.config.OpenStackConfig()
         osconfig.cloud_config[
             'clouds']['envvars']['project_name'] = self.project.name
+        osconfig.cloud_config[
+            'clouds']['envvars']['project_id'] = self.project.id
         osconfig.cloud_config['clouds']['envvars']['username'] = self.user.name
         osconfig.cloud_config['clouds']['envvars']['password'] = self.password
         self.__logger.debug("cloud_config %s", osconfig.cloud_config)
@@ -90,10 +99,10 @@ class NewProject(object):
         """Remove projects/users"""
         try:
             assert self.orig_cloud
-            assert self.user.id
-            assert self.project.id
-            self.orig_cloud.delete_user(self.user.id)
-            self.orig_cloud.delete_project(self.project.id)
+            if self.user:
+                self.orig_cloud.delete_user(self.user.id)
+            if self.project:
+                self.orig_cloud.delete_project(self.project.id)
             if self.role:
                 self.orig_cloud.delete_role(self.role.id)
         except Exception:  # pylint: disable=broad-except
@@ -141,7 +150,7 @@ class TenantNetwork1(testcase.TestCase):
     @staticmethod
     def get_external_network(cloud):
         """
-        Returns the configured external network name or
+        Return the configured external network name or
         the first retrieved external network name
         """
         assert cloud
@@ -154,6 +163,26 @@ class TenantNetwork1(testcase.TestCase):
         if networks:
             return networks[0]
         return None
+
+    @staticmethod
+    def get_default_role(cloud, member="Member"):
+        """Get the default role
+
+        It also tests the role in lowercase to avoid possible conflicts.
+        """
+        role = cloud.get_role(member)
+        if not role:
+            role = cloud.get_role(member.lower())
+        return role
+
+    @staticmethod
+    def get_public_auth_url(cloud):
+        """Get Keystone public endpoint"""
+        keystone_id = cloud.search_services('keystone')[0].id
+        endpoint = cloud.search_endpoints(
+            filters={'interface': 'public',
+                     'service_id': keystone_id})[0].url
+        return endpoint
 
     def _create_network_ressources(self):
         assert self.cloud
@@ -207,10 +236,15 @@ class TenantNetwork1(testcase.TestCase):
     def clean(self):
         try:
             assert self.cloud
-            self.cloud.remove_router_interface(self.router, self.subnet.id)
-            self.cloud.delete_router(self.router.id)
-            self.cloud.delete_subnet(self.subnet.id)
-            self.cloud.delete_network(self.network.id)
+            if self.router:
+                if self.subnet:
+                    self.cloud.remove_router_interface(
+                        self.router, self.subnet.id)
+                self.cloud.delete_router(self.router.id)
+            if self.subnet:
+                self.cloud.delete_subnet(self.subnet.id)
+            if self.network:
+                self.cloud.delete_network(self.network.id)
         except Exception:  # pylint: disable=broad-except
             self.__logger.exception("cannot clean all ressources")
 

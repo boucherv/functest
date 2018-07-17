@@ -10,28 +10,15 @@
 # pylint: disable=missing-docstring
 
 import logging
-import os
 
 from six.moves import configparser
 
 from functest.opnfv_tests.openstack.tempest import tempest
-from functest.utils import config
 
 
 class Patrole(tempest.TempestCommon):
 
     __logger = logging.getLogger(__name__)
-
-    def __init__(self, **kwargs):
-        if "case_name" not in kwargs:
-            kwargs["case_name"] = 'patrole'
-        super(Patrole, self).__init__(**kwargs)
-        self.res_dir = os.path.join(
-            getattr(config.CONF, 'dir_results'), 'patrole')
-        self.list = os.path.join(self.res_dir, 'tempest-list.txt')
-
-    def apply_tempest_blacklist(self):
-        pass
 
     def configure(self, **kwargs):
         super(Patrole, self).configure(**kwargs)
@@ -45,8 +32,9 @@ class Patrole(tempest.TempestCommon):
         self.backup_tempest_config(self.conf_file, self.res_dir)
 
     def run(self, **kwargs):
-        for exclude in kwargs.get('exclude', []):
-            self.mode = "{}(?!.*{})".format(self.mode, exclude)
-        self.mode = "'{}(?=patrole_tempest_plugin.tests.api.({}))'".format(
-            self.mode, '|'.join(kwargs.get('services', [])))
+        for exclude in kwargs.get('excludes', []):
+            kwargs['mode'] = "{}(?!.*{})".format(
+                kwargs.get('mode', ''), exclude)
+        kwargs['mode'] = '{}(?=patrole_tempest_plugin.tests.api.({}))'.format(
+            kwargs['mode'], '|'.join(kwargs.get('includes', [])))
         return super(Patrole, self).run(**kwargs)

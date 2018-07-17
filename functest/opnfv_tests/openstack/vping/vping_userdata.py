@@ -39,7 +39,8 @@ class VPingUserdata(singlevm.VmReady2):
         """
         try:
             assert self.cloud
-            super(VPingUserdata, self).run()
+            assert super(VPingUserdata, self).run(
+                **kwargs) == testcase.TestCase.EX_OK
             self.result = 0
             self.vm1 = self.boot_vm()
             self.vm2 = self.boot_vm(
@@ -121,10 +122,12 @@ class VPingUserdata(singlevm.VmReady2):
 
     def clean(self):
         assert self.cloud
-        self.cloud.delete_server(
-            self.vm1, wait=True,
-            timeout=getattr(config.CONF, 'vping_vm_delete_timeout'))
-        self.cloud.delete_server(
-            self.vm2, wait=True,
-            timeout=getattr(config.CONF, 'vping_vm_delete_timeout'))
+        if self.vm1:
+            self.cloud.delete_server(
+                self.vm1, wait=True,
+                timeout=getattr(config.CONF, 'vping_vm_delete_timeout'))
+        if self.vm2:
+            self.cloud.delete_server(
+                self.vm2, wait=True,
+                timeout=getattr(config.CONF, 'vping_vm_delete_timeout'))
         super(VPingUserdata, self).clean()

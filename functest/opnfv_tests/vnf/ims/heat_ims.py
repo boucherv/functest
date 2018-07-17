@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright (c) 2017 Orange, Kontron and others.
+# Copyright (c) 2018 Kontron, Orange and others.
 #
 # All rights reserved. This program and the accompanying materials
 # are made available under the terms of the Apache License, Version 2.0
@@ -13,36 +13,35 @@ from __future__ import division
 
 import logging
 import os
+import re
 import time
-import uuid
-import os_client_config
-import shade
-
-import six
-from snaps.config.flavor import FlavorConfig
-from snaps.config.image import ImageConfig
-from snaps.config.keypair import KeypairConfig
-from snaps.openstack.create_flavor import OpenStackFlavor
-from snaps.openstack.create_image import OpenStackImage
-from snaps.openstack.create_keypairs import OpenStackKeypair
-from snaps.openstack.utils import keystone_utils
-from snaps.openstack.utils import neutron_utils
-from xtesting.energy import energy
 import yaml
 
-from functest.opnfv_tests.openstack.snaps import snaps_utils
-from functest.core import tenantnetwork
-from functest.opnfv_tests.vnf.ims import clearwater_ims_base
+import pkg_resources
+from xtesting.core import testcase
+
+from functest.core import singlevm
+from functest.opnfv_tests.vnf.ims import clearwater
 from functest.utils import config
-from functest.utils import env
 
 __author__ = "Valentin Boucher <valentin.boucher@kontron.com>"
 
 
-class HeatIms(clearwater_ims_base.ClearwaterOnBoardingBase):
+class HeatIms(singlevm.SingleVm2):
     """Clearwater vIMS deployed with Heat Orchestrator Case."""
 
     __logger = logging.getLogger(__name__)
+
+    filename_alt = ('/home/opnfv/functest/images/'
+                    'ubuntu-14.04-server-cloudimg-amd64-disk1.img')
+
+    flavor_alt_ram = 2048
+    flavor_alt_vcpus = 2
+    flavor_alt_disk = 25
+
+    quota_security_group = 20
+    quota_security_group_rule = 100
+    quota_port = 50
 
     def __init__(self, **kwargs):
         """Initialize HeatIms testcase object."""
@@ -57,11 +56,13 @@ class HeatIms(clearwater_ims_base.ClearwaterOnBoardingBase):
         except Exception:
             raise Exception("VNF config file not found")
 
+        self.case_dir = pkg_resources.resource_filename(
+            'functest', 'opnfv_tests/vnf/ims')
         config_file = os.path.join(self.case_dir, self.config)
 
         self.vnf = dict(
             descriptor=get_config("vnf.descriptor", config_file),
-            requirements=get_config("vnf.requirements", config_file)
+            parameters=get_config("vnf.inputs", config_file)
         )
         self.details['vnf'] = dict(
             descriptor_version=self.vnf['descriptor']['version'],
@@ -70,140 +71,118 @@ class HeatIms(clearwater_ims_base.ClearwaterOnBoardingBase):
         )
         self.__logger.debug("VNF configuration: %s", self.vnf)
 
-        self.images = get_config("tenant_images", config_file)
-        self.__logger.info("Images needed for vIMS: %s", self.images)
+        self.image_alt = None
+        self.flavor_alt = None
+        self.stack = None
+        self.clearwater = None
 
-    def prepare(self):
-        """Prepare testscase (Additional pre-configuration steps)."""
-        super(HeatIms, self).prepare()
-
-
-        self.cloud = shade.OpenStackCloud(cloud_config=os_client_config.get_config())
-        self.project = tenantnetwork.NewProject(
-            self.cloud, self.case_name, self.guid)
-        self.project.create()
-        self.cloud = self.project.cloud
-
-        self.__logger.info("Additional pre-configuration steps")
-
-        compute_quotas = self.os_project.get_compute_quotas()
-        network_quotas = self.os_project.get_network_quotas()
-
-        for key, value in (
-                self.vnf['requirements']['compute_quotas'].items()):
-            setattr(compute_quotas, key, value)
-
-        for key, value in (
-                self.vnf['requirements']['network_quotas'].items()):
-            setattr(network_quotas, key, value)
-
-        compute_quotas = self.os_project.update_compute_quotas(compute_quotas)
-        network_quotas = self.os_project.update_network_quotas(network_quotas)
-
-    def deploy_orchestrator(self):
+    def execute(self):
         # pylint: disable=too-many-locals,too-many-statements
         """
-        Deploy Cloudify Manager.
+        Prepare Tenant/User
 
         network, security group, fip, VM creation
         """
         start_time = time.time()
+        self.orig_cloud.set_network_quotas(
+            self.project.project.name,
+            security_group=self.quota_security_group,
+            security_group_rule=self.quota_security_group_rule,
+            port=self.quota_port)
+        duration = time.time() - start_time
 
+        if (self.deploy_vnf() and self.test_vnf()):
+            self.result = 100
+            return 0
         self.result = 1/3 * 100
-        return True
+        return 1
+
+    def run(self, **kwargs):
+        """Boot the new VM
+
+        Here are the main actions:
+        - add a new ssh key
+        - boot the VM
+        - create the security group
+        - execute the right command over ssh
+
+        Returns:
+        - TestCase.EX_OK
+        - TestCase.EX_RUN_ERROR on error
+        """
+        status = testcase.TestCase.EX_RUN_ERROR
+        try:
+            assert self.cloud
+            self.result = 0
+            if not self.execute():
+                self.result = 100
+                status = testcase.TestCase.EX_OK
+        except Exception:  # pylint: disable=broad-except
+            self.__logger.exception('Cannot run %s', self.case_name)
+        finally:
+            self.stop_time = time.time()
+        return status
 
     def deploy_vnf(self):
         """Deploy Clearwater IMS."""
         start_time = time.time()
 
-        self.__logger.info("Creating keypair ...")
-        kp_file = os.path.join(self.data_dir, "heat_ims.pem")
-        keypair_settings = KeypairConfig(
-            name='heat_ims_kp',
-            private_filepath=kp_file)
-        keypair_creator = OpenStackKeypair(self.snaps_creds, keypair_settings)
-        keypair_creator.create()
-        self.created_object.append(keypair_creator)
+        super(HeatIms, self).prepare()
 
-        # needs some images
-        self.__logger.info("Upload some OS images if it doesn't exist")
-        for image_name, image_file in six.iteritems(self.images):
-            self.__logger.info("image: %s, file: %s", image_name, image_file)
-            if image_file and image_name:
-                image_creator = OpenStackImage(
-                    self.snaps_creds,
-                    ImageConfig(
-                        name=image_name, image_user='cloud',
-                        img_format='qcow2', image_file=image_file))
-                image_creator.create()
-                self.created_object.append(image_creator)
-
-
-
-        self.__logger.info("Upload VNFD")
+        self.image_alt = self.publish_image_alt()
+        self.flavor_alt = self.create_flavor_alt()
+        # KeyPair + Image + Flavor OK
 
         descriptor = self.vnf['descriptor']
+        parameters = self.vnf['parameters']
 
-        self.__logger.info("Get or create flavor for all clearwater vm")
-        flavor_settings = FlavorConfig(
-            name="{}-{}".format(
-                self.vnf['requirements']['flavor']['name'],
-                self.uuid),
-            ram=self.vnf['requirements']['flavor']['ram_min'],
-            disk=25,
-            vcpus=2)
-        flavor_creator = OpenStackFlavor(self.snaps_creds, flavor_settings)
-        flavor_creator.create()
-        self.created_object.append(flavor_creator)
-        envfile_path = os.path.join(self.case_dir, descriptor.get('envfile'))
-        with open(envfile_path) as config_file:
-            envfile_content = yaml.safe_load(config_file)
-        config_file.close()
+        parameters['public_mgmt_net_id'] = self.ext_net.id
+        parameters['public_sig_net_id'] = self.ext_net.id
+        parameters['flavor'] = self.flavor_alt.name
+        parameters['image'] = self.image_alt.name
+        parameters['key_name'] = self.keypair.name
 
-        ext_net_name = snaps_utils.get_ext_net_name(self.snaps_creds)
-        ext_nets = neutron_utils.get_external_networks(neutron_utils.neutron_client(self.snaps_creds))
-        for ext_net in ext_nets:
-            if ext_net.name == ext_net_name:
-                envfile_content['parameters']['public_mgmt_net_id'] = ext_net.id
-                envfile_content['parameters']['public_sig_net_id'] = ext_net.id
-        envfile_content['parameters']['flavor'] = self.vnf['requirements']['flavor']['name']
-        envfile_content['parameters']['image'] = 'ubuntu_14.04'
-        envfile_content['parameters']['key_name'] = keypair_settings.name
+        self.__logger.info("Create Heat Stack")
+        self.stack = self.cloud.create_stack(name=descriptor.get('name'),
+                                             template_file=descriptor.get('file_name'),
+                                             wait=True,
+                                             **parameters)
+        self.__logger.debug("stack: %s", self.stack)
 
-        self.__logger.info("Create VNF Instance")
-        self.cloud.create_stack(name=descriptor.get('name'),
-                                template_file=descriptor.get('file_name'),
-                                environment_files=descriptor.get('envfile'))
+        servers = self.cloud.list_servers(detailed=True)
+        self.__logger.debug("servers: %s", servers)
+        for server in servers:
+            if 'ellis' in server.name:
+                self.__logger.debug("server: %s", server)
+                ellis_ip = server.public_v4
+
+        assert ellis_ip
+        self.clearwater = clearwater.ClearwaterTesting(self.case_name, ellis_ip)
+        # This call can take time and many retry because Heat is
+        # an infrastructure orchestrator so when Heat say "stack created"
+        # it means that all OpenStack ressources are created but not that
+        # Clearwater are up and ready (Cloud-Init script still running)
+        self.clearwater.availability_check_by_creating_numbers()
 
         duration = time.time() - start_time
 
-        #self.__logger.info(execution)
-        """if execution.status == 'terminated':
-            self.details['vnf'].update(status='PASS', duration=duration)
-            self.result += 1/3 * 100
-            result = True
-        else:
-            self.details['vnf'].update(status='FAIL', duration=duration)
-            result = False
-        return result"""
+        self.details['vnf'].update(status='PASS', duration=duration)
+        self.result += 1/3 * 100
+
         return True
 
     def test_vnf(self):
         """Run test on clearwater ims instance."""
         start_time = time.time()
 
-        cfy_client = self.orchestrator['object']
-
-        outputs = cfy_client.deployments.outputs.get(
-            self.vnf['descriptor'].get('name'))['outputs']
-        dns_ip = outputs['dns_ip']
-        ellis_ip = outputs['ellis_ip']
-        self.config_ellis(ellis_ip)
+        outputs = self.cloud.get_stack(self.stack.id).outputs
+        self.__logger.debug("stack outputs: %s", outputs)
+        dns_ip = re.findall(r'[0-9]+(?:\.[0-9]+){3}', str(outputs))[0]
 
         if not dns_ip:
             return False
 
-        short_result = self.run_clearwater_live_test(
+        short_result = self.clearwater.run_clearwater_live_test(
             dns_ip=dns_ip,
             public_domain=self.vnf['inputs']["public_domain"])
         duration = time.time() - start_time
@@ -227,28 +206,10 @@ class HeatIms(clearwater_ims_base.ClearwaterOnBoardingBase):
 
     def clean(self):
         """Clean created objects/functions."""
-        try:
-            dep_name = self.vnf['descriptor'].get('name')
-            # kill existing execution
-            self.__logger.info('Deleting the current deployment')
-            """
-            execution = cfy_client.executions.start(
-                dep_name,
-                'uninstall',
-                parameters=dict(ignore_failure=True),
-                force=True)
-
-            cfy_client.blueprints.delete(self.vnf['descriptor'].get('name'))
-            """
-        except Exception:  # pylint: disable=broad-except
-            self.__logger.exception("Some issue during the undeployment ..")
-
+        assert self.cloud
+        if self.stack:
+            self.cloud.delete_stack(self.stack.id)
         super(HeatIms, self).clean()
-
-    @energy.enable_recording
-    def run(self, **kwargs):
-        """Execute HeatIms test case."""
-        return super(HeatIms, self).run(**kwargs)
 
 
 # ----------------------------------------------------------

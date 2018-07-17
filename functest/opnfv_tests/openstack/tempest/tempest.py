@@ -35,15 +35,12 @@ class TempestCommon(singlevm.VmReady1):
     # pylint: disable=too-many-instance-attributes
     """TempestCommon testcases implementation class."""
 
-    TEMPEST_RESULTS_DIR = os.path.join(
-        getattr(config.CONF, 'dir_results'), 'tempest')
-
     visibility = 'public'
 
     def __init__(self, **kwargs):
+        if "case_name" not in kwargs:
+            kwargs["case_name"] = 'tempest'
         super(TempestCommon, self).__init__(**kwargs)
-        self.mode = ""
-        self.option = []
         self.verifier_id = conf_utils.get_verifier_id()
         self.verifier_repo_dir = conf_utils.get_verifier_repo_dir(
             self.verifier_id)
@@ -51,12 +48,47 @@ class TempestCommon(singlevm.VmReady1):
         self.deployment_dir = conf_utils.get_verifier_deployment_dir(
             self.verifier_id, self.deployment_id)
         self.verification_id = None
-        self.res_dir = TempestCommon.TEMPEST_RESULTS_DIR
+        self.res_dir = os.path.join(
+            getattr(config.CONF, 'dir_results'), self.case_name)
         self.raw_list = os.path.join(self.res_dir, 'test_raw_list.txt')
         self.list = os.path.join(self.res_dir, 'test_list.txt')
         self.conf_file = None
         self.image_alt = None
         self.flavor_alt = None
+        self.services = []
+        try:
+            self.services = kwargs['run']['args']['services']
+        except Exception:  # pylint: disable=broad-except
+            pass
+        self.neutron_extensions = []
+        try:
+            self.neutron_extensions = kwargs['run']['args'][
+                'neutron_extensions']
+        except Exception:  # pylint: disable=broad-except
+            pass
+
+    def check_services(self):
+        """Check the mandatory services."""
+        for service in self.services:
+            try:
+                self.cloud.search_services(service)[0]
+            except Exception:  # pylint: disable=broad-except
+                self.is_skipped = True
+                break
+
+    def check_extensions(self):
+        """Check the mandatory network extensions."""
+        extensions = self.cloud.get_network_extensions()
+        for network_extension in self.neutron_extensions:
+            if network_extension not in extensions:
+                LOGGER.warning(
+                    "Cannot find Neutron extension: %s", network_extension)
+                self.is_skipped = True
+                break
+
+    def check_requirements(self):
+        self.check_services()
+        self.check_extensions()
 
     @staticmethod
     def read_file(filename):
@@ -103,11 +135,11 @@ class TempestCommon(singlevm.VmReady1):
         shutil.copyfile(conf_file,
                         os.path.join(res_dir, 'tempest.conf'))
 
-    def generate_test_list(self):
+    def generate_test_list(self, **kwargs):
         """Generate test list based on the test mode."""
         LOGGER.debug("Generating test case list...")
         self.backup_tempest_config(self.conf_file, '/etc')
-        if self.mode == 'custom':
+        if kwargs.get('mode') == 'custom':
             if os.path.isfile(conf_utils.TEMPEST_CUSTOM):
                 shutil.copyfile(
                     conf_utils.TEMPEST_CUSTOM, self.list)
@@ -115,13 +147,9 @@ class TempestCommon(singlevm.VmReady1):
                 raise Exception("Tempest test list file %s NOT found."
                                 % conf_utils.TEMPEST_CUSTOM)
         else:
-            if self.mode == 'smoke':
-                testr_mode = r"'^tempest\.(api|scenario).*\[.*\bsmoke\b.*\]$'"
-            elif self.mode == 'full':
-                testr_mode = r"'^tempest\.'"
-            else:
-                testr_mode = self.mode
-            cmd = "(cd {0}; stestr list {1} >{2} 2>/dev/null)".format(
+            testr_mode = kwargs.get(
+                'mode', r'^tempest\.(api|scenario).*\[.*\bsmoke\b.*\]$')
+            cmd = "(cd {0}; stestr list '{1}' >{2} 2>/dev/null)".format(
                 self.verifier_repo_dir, testr_mode, self.list)
             output = subprocess.check_output(cmd, shell=True)
             LOGGER.info("%s\n%s", cmd, output)
@@ -166,11 +194,11 @@ class TempestCommon(singlevm.VmReady1):
                 result_file.write(str(cases_line) + '\n')
         result_file.close()
 
-    def run_verifier_tests(self):
+    def run_verifier_tests(self, **kwargs):
         """Execute tempest test cases."""
         cmd = ["rally", "verify", "start", "--load-list",
                self.list]
-        cmd.extend(self.option)
+        cmd.extend(kwargs.get('option', []))
         LOGGER.info("Starting Tempest test suite: '%s'.", cmd)
 
         f_stdout = open(
@@ -256,6 +284,30 @@ class TempestCommon(singlevm.VmReady1):
         subprocess.Popen(cmd, stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT)
 
+    def update_rally_regex(self, rally_conf='/etc/rally/rally.conf'):
+        """Set image name as tempest img_name_regex"""
+        rconfig = configparser.RawConfigParser()
+        rconfig.read(rally_conf)
+        if not rconfig.has_section('tempest'):
+            rconfig.add_section('tempest')
+        rconfig.set('tempest', 'img_name_regex', '^{}$'.format(
+            self.image.name))
+        with open(rally_conf, 'wb') as config_file:
+            rconfig.write(config_file)
+
+    def update_default_role(self, rally_conf='/etc/rally/rally.conf'):
+        """Detect and update the default role if required"""
+        role = self.get_default_role(self.cloud)
+        if not role:
+            return
+        rconfig = configparser.RawConfigParser()
+        rconfig.read(rally_conf)
+        if not rconfig.has_section('tempest'):
+            rconfig.add_section('tempest')
+        rconfig.set('tempest', 'swift_operator_role', '^{}$'.format(role.name))
+        with open(rally_conf, 'wb') as config_file:
+            rconfig.write(config_file)
+
     def configure(self, **kwargs):  # pylint: disable=unused-argument
         """
         Create all openstack resources for tempest-based testcases and write
@@ -265,8 +317,7 @@ class TempestCommon(singlevm.VmReady1):
             os.makedirs(self.res_dir)
         compute_cnt = len(self.cloud.list_hypervisors())
 
-        self.image_alt = self.publish_image(
-            '{}-img_alt_{}'.format(self.case_name, self.guid))
+        self.image_alt = self.publish_image_alt()
         self.flavor_alt = self.create_flavor_alt()
         LOGGER.debug("flavor: %s", self.flavor_alt)
 
@@ -283,16 +334,20 @@ class TempestCommon(singlevm.VmReady1):
     def run(self, **kwargs):
         self.start_time = time.time()
         try:
-            super(TempestCommon, self).run(**kwargs)
+            assert super(TempestCommon, self).run(
+                **kwargs) == testcase.TestCase.EX_OK
+            self.update_rally_regex()
+            self.update_default_role()
             self.configure(**kwargs)
-            self.generate_test_list()
+            self.generate_test_list(**kwargs)
             self.apply_tempest_blacklist()
-            self.run_verifier_tests()
+            self.run_verifier_tests(**kwargs)
             self.parse_verifier_result()
             self.generate_report()
             res = testcase.TestCase.EX_OK
         except Exception:  # pylint: disable=broad-except
             LOGGER.exception('Error with run')
+            self.result = 0
             res = testcase.TestCase.EX_RUN_ERROR
         self.stop_time = time.time()
         return res
@@ -302,87 +357,7 @@ class TempestCommon(singlevm.VmReady1):
         Cleanup all OpenStack objects. Should be called on completion.
         """
         super(TempestCommon, self).clean()
-        self.cloud.delete_image(self.image_alt)
-        self.orig_cloud.delete_flavor(self.flavor_alt.id)
-
-
-class TempestSmokeSerial(TempestCommon):
-    """Tempest smoke serial testcase implementation."""
-    def __init__(self, **kwargs):
-        if "case_name" not in kwargs:
-            kwargs["case_name"] = 'tempest_smoke_serial'
-        TempestCommon.__init__(self, **kwargs)
-        self.mode = "smoke"
-        self.option = ["--concurrency", "1"]
-
-
-class TempestNeutronTrunk(TempestCommon):
-    """Tempest neutron trunk testcase implementation."""
-    def __init__(self, **kwargs):
-        if "case_name" not in kwargs:
-            kwargs["case_name"] = 'neutron_trunk'
-        TempestCommon.__init__(self, **kwargs)
-        self.mode = "'neutron_tempest_plugin.(api|scenario).test_trunk'"
-        self.res_dir = os.path.join(
-            getattr(config.CONF, 'dir_results'), 'neutron_trunk')
-        self.raw_list = os.path.join(self.res_dir, 'test_raw_list.txt')
-        self.list = os.path.join(self.res_dir, 'test_list.txt')
-
-    def configure(self, **kwargs):
-        super(TempestNeutronTrunk, self).configure(**kwargs)
-        rconfig = configparser.RawConfigParser()
-        rconfig.read(self.conf_file)
-        rconfig.set('network-feature-enabled', 'api_extensions', 'all')
-        with open(self.conf_file, 'wb') as config_file:
-            rconfig.write(config_file)
-
-
-class TempestBarbican(TempestCommon):
-    """Tempest Barbican testcase implementation."""
-    def __init__(self, **kwargs):
-        if "case_name" not in kwargs:
-            kwargs["case_name"] = 'barbican'
-        TempestCommon.__init__(self, **kwargs)
-        self.mode = "'barbican_tempest_plugin.tests.(api|scenario)'"
-        self.res_dir = os.path.join(
-            getattr(config.CONF, 'dir_results'), 'barbican')
-        self.raw_list = os.path.join(self.res_dir, 'test_raw_list.txt')
-        self.list = os.path.join(self.res_dir, 'test_list.txt')
-
-
-class TempestSmokeParallel(TempestCommon):
-    """Tempest smoke parallel testcase implementation."""
-    def __init__(self, **kwargs):
-        if "case_name" not in kwargs:
-            kwargs["case_name"] = 'tempest_smoke_parallel'
-        TempestCommon.__init__(self, **kwargs)
-        self.mode = "smoke"
-
-
-class TempestFullParallel(TempestCommon):
-    """Tempest full parallel testcase implementation."""
-    def __init__(self, **kwargs):
-        if "case_name" not in kwargs:
-            kwargs["case_name"] = 'tempest_full_parallel'
-        TempestCommon.__init__(self, **kwargs)
-        self.mode = "full"
-
-
-class TempestCustom(TempestCommon):
-    """Tempest custom testcase implementation."""
-    def __init__(self, **kwargs):
-        if "case_name" not in kwargs:
-            kwargs["case_name"] = 'tempest_custom'
-        TempestCommon.__init__(self, **kwargs)
-        self.mode = "custom"
-        self.option = ["--concurrency", "1"]
-
-
-class TempestDefcore(TempestCommon):
-    """Tempest Defcore testcase implementation."""
-    def __init__(self, **kwargs):
-        if "case_name" not in kwargs:
-            kwargs["case_name"] = 'tempest_defcore'
-        TempestCommon.__init__(self, **kwargs)
-        self.mode = "defcore"
-        self.option = ["--concurrency", "1"]
+        if self.image_alt:
+            self.cloud.delete_image(self.image_alt)
+        if self.flavor_alt:
+            self.orig_cloud.delete_flavor(self.flavor_alt.id)
