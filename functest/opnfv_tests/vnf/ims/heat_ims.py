@@ -208,7 +208,7 @@ class HeatIms(singlevm.SingleVm2):
         """Clean created objects/functions."""
         assert self.cloud
         if self.stack:
-            self.cloud.delete_stack(self.stack.id)
+            self.cloud.delete_stack(self.stack.id, wait=True)
         super(HeatIms, self).clean()
 
 
