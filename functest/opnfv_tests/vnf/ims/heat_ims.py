@@ -184,7 +184,7 @@ class HeatIms(singlevm.SingleVm2):
 
         short_result = self.clearwater.run_clearwater_live_test(
             dns_ip=dns_ip,
-            public_domain=self.vnf['inputs']["public_domain"])
+            public_domain=self.vnf['parameters']["zone"])
         duration = time.time() - start_time
         self.__logger.info(short_result)
         self.details['test_vnf'].update(result=short_result,
@@ -207,8 +207,11 @@ class HeatIms(singlevm.SingleVm2):
     def clean(self):
         """Clean created objects/functions."""
         assert self.cloud
-        if self.stack:
-            self.cloud.delete_stack(self.stack.id, wait=True)
+        try:
+            if self.stack:
+                self.cloud.delete_stack(self.stack.id, wait=True)
+        except Exception:  # pylint: disable=broad-except
+            self.__logger.exception("Cannot clean stack ressources")
         super(HeatIms, self).clean()
 
 
