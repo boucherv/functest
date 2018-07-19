@@ -73,8 +73,11 @@ class HeatIms(singlevm.SingleVm2):
 
         self.image_alt = None
         self.flavor_alt = None
+<<<<<<< HEAD
         self.stack = None
         self.clearwater = None
+=======
+>>>>>>> a2b93e97bab1e595b4c81c756f5a0a2f46fac5aa
 
     def execute(self):
         # pylint: disable=too-many-locals,too-many-statements
