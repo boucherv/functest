@@ -52,7 +52,7 @@ class ClearwaterTesting(object):
         """Create one or two numbers"""
         assert self.ellis_ip
         output_dict = {}
-        self.logger.debug('Configure Ellis: %s', self.ellis_ip)
+        self.logger.debug('Ellis IP: %s', self.ellis_ip)
         output_dict['ellis_ip'] = self.ellis_ip
         account_url = 'http://{0}/accounts'.format(self.ellis_ip)
         params = {"password": "functest",
@@ -86,14 +86,14 @@ class ClearwaterTesting(object):
 
     def _create_ellis_account(self, account_url, params):
         req = requests.post(account_url, data=params)
-        i = 30
+        i = 50
         while req.status_code != 201 and i > 0:
             req = requests.post(account_url, data=params)
             if i == 1:
                 raise Exception(
                     "Unable to create an account {}\n{}".format(
                         params.get('full_name'), req.text))
-            self.logger.debug("Unable to create  an account. Retry ..")
+            self.logger.debug("Unable to create an account. Retry ..")
             time.sleep(25)
             i = i - 1
 
