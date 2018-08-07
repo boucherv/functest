@@ -93,4 +93,4 @@ tiers:
                     - DEPLOY_SCENARIO: 'vgpu'
                 run:
                     module: 'functest.opnfv_tests.openstack.vgpu'
-                    class: 'vGPUs'
+                    class: 'vGPU'
