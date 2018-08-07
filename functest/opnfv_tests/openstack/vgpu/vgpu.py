@@ -46,10 +46,11 @@ class vGPU(singlevm.SingleVm2):
         Test if the vGPU exist.
         """
         (_, stdout, stderr) = self.ssh.exec_command('lspci')
+        lspci_output = stdout.read()
         self.__logger.debug("output:\n%s", stdout.read())
         self.__logger.debug("error:\n%s", stderr.read())
-        if 'VGA compatible controller: Intel' in stdout.read() or \
-                'VGA compatible controller: Nvidia' in stdout.read():
+        if 'VGA compatible controller: Intel' in lspci_output or \
+                'VGA compatible controller: Nvidia' in lspci_output:
             self.__logger.info("The VM have a vGPU")
             return 0
         else:
