@@ -92,5 +92,5 @@ tiers:
                 dependencies:
                     - DEPLOY_SCENARIO: 'vgpu'
                 run:
-                    module: 'functest.opnfv_tests.openstack.vgpu'
+                    module: 'functest.opnfv_tests.openstack.vgpu.vgpu'
                     class: 'vGPU'
