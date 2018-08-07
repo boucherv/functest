@@ -31,7 +31,7 @@ class vGPU(singlevm.SingleVm2):
     flavor_vcpus = 2
     flavor_disk = 40
     flavor_extra_specs = {'resources:VGPU':'1'}
-
+    username = 'ubuntu'
     ssh_connect_loops = 12
     create_server_timeout = 300
 
