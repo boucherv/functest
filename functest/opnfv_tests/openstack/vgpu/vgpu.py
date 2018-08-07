@@ -30,15 +30,16 @@ class vGPU(singlevm.SingleVm2):
     flavor_ram = 4096
     flavor_vcpus = 2
     flavor_disk = 40
+    flavor_extra_specs = {'resources:VGPU':'1'}
+
+    ssh_connect_loops = 12
+    create_server_timeout = 300
 
     def __init__(self, **kwargs):
         """Initialize Cloudify testcase object."""
         if "case_name" not in kwargs:
             kwargs["case_name"] = "vgpu"
         super(vGPU, self).__init__(**kwargs)
-
-    def prepare(self):
-        super(vGPU, self).prepare()
 
     def execute(self):
         """

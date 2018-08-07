@@ -152,9 +152,6 @@ rally:
     deployment_name: opnfv-rally
     network_name: rally-net
 
-vgpu:
-    flavor_extra_specs: {'resources:VGPU':'1'}
-
 vnf:
     juju_epc:
         config: juju_epc.yaml
